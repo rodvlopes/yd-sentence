@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 
-const util = require('util')
-const exec = util.promisify(require('child_process').exec)
+const { promisify } = require('util')
+const https = require('https')
+
+https.get[promisify.custom] = options =>
+    new Promise((resolve, reject) => {
+        https.get(options, (response) => {
+            response.end = new Promise((resolve) => response.on('end', resolve))
+            resolve(response)
+        }).on('error', reject)
+    })
+
+const httpGet = promisify(https.get);
 
 /**
  * Wraps a word with a terminal's color code.
@@ -30,7 +40,7 @@ function highlight(txt, word) {
     const wordSp = word.replace('-', ' ')
     const coloredWordSp = colorize('yellow', wordSp)
     return txt.replace(new RegExp(`\\b${word}\\b`, 'ig'), coloredWord)
-              .replace(new RegExp(`\\b${wordSp}\\b`, 'ig'), coloredWordSp)
+        .replace(new RegExp(`\\b${wordSp}\\b`, 'ig'), coloredWordSp)
 }
 
 /**
@@ -51,8 +61,11 @@ function parseInput(data) {
  */
 async function crawlYD(word) {
     try {
-        const { stdout } = await exec(`curl "https://sentence.yourdictionary.com/${word}"`)
-        return stdout
+        const response = await httpGet(`https://sentence.yourdictionary.com/${word}`)
+        let body = ''
+        response.on('data', chunk => body += chunk)
+        await response.end
+        return body
     }
     catch (e) {
         console.error(e)
@@ -66,12 +79,22 @@ function printHelp() {
 
 function printColorTable() {
     const NC = '\033[0m'
-    for (let i=1; i<128; i++) {
-        process.stdout.write('\033[0;'+`${i}m |${i}| ${NC}`)
+    for (let i = 1; i < 128; i++) {
+        process.stdout.write('\033[0;' + `${i}m |${i}| ${NC}`)
     }
     console.log('')
 }
 
+function progressHOF(fn) {
+    return async function () {
+        const spin = '-\\|/'
+        let i = 0;
+        const interval = setInterval(() => process.stdout.write(`${spin[i++%4]}\r`), 200)
+        let result = await fn(...arguments)
+        clearInterval(interval)
+        return result
+    }
+}
 
 //                    _       
 //    _ __ ___   __ _(_)_ __  
@@ -79,15 +102,16 @@ function printColorTable() {
 //   | | | | | | (_| | | | | |
 //   |_| |_| |_|\__,_|_|_| |_|
 
-async function main () {
-    const word = (process.argv.splice(2)).join('-')
-    var data = await crawlYD(word)
-    
+async function main(argv) {
+    const word = (argv.splice(2)).join('-')
+
     if (!word) {
         printHelp()
         return
     }
-    
+
+    var data = await progressHOF(crawlYD)(word)
+
     if (!data) {
         console.log('no data found')
         return
@@ -95,7 +119,7 @@ async function main () {
 
     var { slug, sentences } = parseInput(data)
     sentences.splice(10)
-    
+
     console.log('Sentences for', slug)
     sentences.forEach(({ sentence, upvotes, downvotes }, i) => {
         const highlightedSentence = highlight(sentence, slug)
@@ -106,4 +130,13 @@ async function main () {
     })
 }
 
-main()
+if (require.main === module) {
+    main(process.argv)
+}
+
+module.exports = {
+    colorize,
+    highlight,
+    parseInput,
+    progressHOF
+}
