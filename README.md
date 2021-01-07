@@ -4,14 +4,13 @@ A commandline interface to get a word in a context.
 
 ### Requirements
 
-* bash with curl
-* nodejs (no other dependency)
+* nodejs (no other dependency, no npm install)
 
 ## Running
 
 ./setence.js hello
 
-## Intalling system wide
+## Installing system wide
 
 install setence.js /usr/local/bin/sentence
 
